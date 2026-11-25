@@ -7,8 +7,18 @@ const SUGGESTED_PROMPTS = [
   "Find a cheaper alternative to Paris in spring",
 ];
 
+const PENDO_AGENT_ID = "iiz9ksFpY7Gj3W4vGXD-EEZHMh8";
+
 function newConversationId(): string {
   return crypto.randomUUID();
+}
+
+/** Reports a Tripwise Assistant event to Pendo Agent Analytics, if Pendo is loaded. */
+function trackAgent(
+  eventType: "prompt" | "agent_response" | "user_reaction",
+  metadata: { conversationId: string; messageId: string; content: string; suggestedPrompt?: boolean },
+) {
+  window.pendo?.trackAgent?.(eventType, { agentId: PENDO_AGENT_ID, ...metadata });
 }
 
 /**
@@ -23,10 +33,11 @@ export function AssistantPanel({ onClose }: { onClose: () => void }) {
   const [thinking, setThinking] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const send = async (text: string) => {
+  const send = async (text: string, suggestedPrompt = false) => {
     const prompt = text.trim();
     if (prompt === "" || thinking) return;
     const userMessage: ChatMessage = { id: crypto.randomUUID(), role: "user", content: prompt };
+    trackAgent("prompt", { conversationId, messageId: userMessage.id, content: prompt, suggestedPrompt });
     const conversation = [...messages, userMessage];
     setMessages(conversation);
     setDraft("");
@@ -35,6 +46,11 @@ export function AssistantPanel({ onClose }: { onClose: () => void }) {
     try {
       const reply = await sendAssistantMessage(conversationId, conversation);
       setMessages((current) => [...current, reply.message]);
+      trackAgent("agent_response", {
+        conversationId,
+        messageId: reply.message.id,
+        content: reply.message.content,
+      });
     } catch (e) {
       setError((e as Error).message);
     } finally {
@@ -73,7 +89,7 @@ export function AssistantPanel({ onClose }: { onClose: () => void }) {
             Ask me anything about planning a trip.
             <div className="suggestions">
               {SUGGESTED_PROMPTS.map((prompt) => (
-                <button key={prompt} type="button" className="secondary" onClick={() => void send(prompt)}>
+                <button key={prompt} type="button" className="secondary" onClick={() => void send(prompt, true)}>
                   {prompt}
                 </button>
               ))}

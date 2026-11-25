@@ -1,11 +1,13 @@
 import { createContext, useCallback, useContext, useMemo, useState, type ReactNode } from "react";
+import { trackEvent } from "../analytics/pendo";
 import { authApi, type Account, type User } from "../api/auth";
 import { clearSession, readSession, saveSession } from "./session";
 
 interface AuthState {
   user: User | null;
   account: Account | null;
-  signIn: (email: string, password: string) => Promise<void>;
+  /** Signs in. `redirectPath` is the page the user goes to next, recorded with the sign-in. */
+  signIn: (email: string, password: string, redirectPath?: string) => Promise<void>;
   signOut: () => Promise<void>;
   /** Replaces the signed-in user's details, after they edit their profile. */
   updateUser: (user: User) => void;
@@ -17,10 +19,16 @@ const AuthContext = createContext<AuthState | null>(null);
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [session, setSession] = useState(readSession);
 
-  const signIn = useCallback(async (email: string, password: string) => {
+  const signIn = useCallback(async (email: string, password: string, redirectPath?: string) => {
     const signedIn = await authApi.signIn(email, password);
     saveSession(signedIn);
     setSession(signedIn);
+    // Pendo Track Event: a new sign-in succeeded. The Pendo agent attaches the visitor and account ids.
+    trackEvent("sign_in_completed", {
+      role: signedIn.user.role,
+      accountPlan: signedIn.account.plan,
+      redirectPath: redirectPath ?? "",
+    });
   }, []);
 
   const signOut = useCallback(async () => {

@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
+import { daysUntilStart, trackEvent, tripLengthDays } from "../analytics/pendo";
 import { tripsApi, type Trip } from "../api/trips";
 import { TripList } from "../components/TripList";
 
@@ -20,6 +21,16 @@ export function TripsPage() {
       setError(null);
       await tripsApi.remove(trip.id);
       setTrips((current) => current.filter((t) => t.id !== trip.id));
+      // Pendo Track Event: the trip was deleted.
+      const startsIn = daysUntilStart(trip);
+      trackEvent("trip_removed", {
+        tripId: trip.id,
+        travelers: trip.travelers,
+        tripLengthDays: tripLengthDays(trip),
+        daysUntilStart: startsIn,
+        isUpcoming: startsIn > 0,
+        remainingTripCount: trips.filter((t) => t.id !== trip.id).length,
+      });
     } catch (e) {
       setError((e as Error).message);
     }

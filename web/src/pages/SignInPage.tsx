@@ -22,7 +22,7 @@ export function SignInPage() {
     setSigningIn(true);
     setError(null);
     try {
-      await signIn(email.trim(), password);
+      await signIn(email.trim(), password, from);
       navigate(from, { replace: true });
     } catch {
       setError("That email and password don't match an account.");

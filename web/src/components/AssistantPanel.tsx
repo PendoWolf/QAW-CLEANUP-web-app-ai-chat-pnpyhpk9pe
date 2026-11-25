@@ -1,11 +1,16 @@
 import { useState, type FormEvent } from "react";
+import { trackEvent } from "../analytics/pendo";
 import { sendAssistantMessage, type ChatMessage } from "../api/assistant";
+import { ApiError } from "../api/client";
 
 const SUGGESTED_PROMPTS = [
   "Suggest a 3-day itinerary for my next trip",
   "What should I pack for a week in Iceland?",
   "Find a cheaper alternative to Paris in spring",
 ];
+
+/** Where a prompt came from: typed in the message box, or one of the suggested prompts. */
+type PromptSource = "typed" | "suggested";
 
 function newConversationId(): string {
   return crypto.randomUUID();
@@ -23,7 +28,7 @@ export function AssistantPanel({ onClose }: { onClose: () => void }) {
   const [thinking, setThinking] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const send = async (text: string) => {
+  const send = async (text: string, promptSource: PromptSource) => {
     const prompt = text.trim();
     if (prompt === "" || thinking) return;
     const userMessage: ChatMessage = { id: crypto.randomUUID(), role: "user", content: prompt };
@@ -32,11 +37,36 @@ export function AssistantPanel({ onClose }: { onClose: () => void }) {
     setDraft("");
     setError(null);
     setThinking(true);
+    const startedAt = performance.now();
+    const replyDetails = {
+      conversationId,
+      promptSource,
+      suggestedPrompt: promptSource === "suggested" ? prompt : "",
+      promptLength: prompt.length,
+    };
     try {
       const reply = await sendAssistantMessage(conversationId, conversation);
       setMessages((current) => [...current, reply.message]);
+      // Pendo Track Event: the AI assistant answered the prompt.
+      trackEvent("assistant_reply_received", {
+        ...replyDetails,
+        outcome: "succeeded",
+        messageCount: conversation.length + 1,
+        replyLength: reply.message.content.length,
+        responseTimeMs: Math.round(performance.now() - startedAt),
+        errorStatus: 0,
+      });
     } catch (e) {
       setError((e as Error).message);
+      // Pendo Track Event: the AI assistant failed to answer the prompt.
+      trackEvent("assistant_reply_received", {
+        ...replyDetails,
+        outcome: "failed",
+        messageCount: conversation.length,
+        replyLength: 0,
+        responseTimeMs: Math.round(performance.now() - startedAt),
+        errorStatus: e instanceof ApiError ? e.status : 0,
+      });
     } finally {
       setThinking(false);
     }
@@ -44,7 +74,7 @@ export function AssistantPanel({ onClose }: { onClose: () => void }) {
 
   const submit = (event: FormEvent) => {
     event.preventDefault();
-    void send(draft);
+    void send(draft, "typed");
   };
 
   const startNewChat = () => {
@@ -73,7 +103,7 @@ export function AssistantPanel({ onClose }: { onClose: () => void }) {
             Ask me anything about planning a trip.
             <div className="suggestions">
               {SUGGESTED_PROMPTS.map((prompt) => (
-                <button key={prompt} type="button" className="secondary" onClick={() => void send(prompt)}>
+                <button key={prompt} type="button" className="secondary" onClick={() => void send(prompt, "suggested")}>
                   {prompt}
                 </button>
               ))}

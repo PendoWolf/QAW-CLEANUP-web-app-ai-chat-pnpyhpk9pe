@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
+import { trackEvent, tripLengthDays } from "../analytics/pendo";
 import { tripsApi, type NewTrip, type Trip } from "../api/trips";
 import { TripForm } from "../components/TripForm";
 
@@ -21,6 +22,15 @@ export function EditTripPage() {
     try {
       setError(null);
       await tripsApi.update(tripId, changes);
+      // Pendo Track Event: the trip changes were saved. Compares the loaded trip with the changes.
+      trackEvent("trip_updated", {
+        tripId,
+        travelers: changes.travelers,
+        tripLengthDays: tripLengthDays(changes),
+        destinationChanged: trip !== null && trip.destination !== changes.destination,
+        datesChanged: trip !== null && (trip.startDate !== changes.startDate || trip.endDate !== changes.endDate),
+        travelersChanged: trip !== null && trip.travelers !== changes.travelers,
+      });
       navigate("/trips");
     } catch (e) {
       setError((e as Error).message);
